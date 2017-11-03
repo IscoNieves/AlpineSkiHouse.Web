@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -9,6 +8,7 @@ using Microsoft.AspNetCore.Identity;
 using AlpineSkiHouse.Web.Models;
 using AlpineSkiHouse.Web.Models.SkiCardViewModels;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace AlpineSkiHouse.Web.Controllers
 {
@@ -17,11 +17,13 @@ namespace AlpineSkiHouse.Web.Controllers
     {
         private readonly SkiCardContext _skiCardContext;
         private readonly UserManager<ApplicationUser> _userManager;
+        private ILogger<SkiCardController> _logger;
 
-        public SkiCardController(SkiCardContext skiCardContext, UserManager<ApplicationUser> userManager)
+        public SkiCardController(SkiCardContext skiCardContext, UserManager<ApplicationUser> userManager, ILogger<SkiCardController> logger)
         {
             _skiCardContext = skiCardContext;
             _userManager = userManager;
+            _logger = logger;
         }
 
         public async Task<ActionResult> Index()
@@ -49,7 +51,7 @@ namespace AlpineSkiHouse.Web.Controllers
 
             var hasExistingSkiCards = _skiCardContext.SkiCards.Any(s => s.ApplicationUserId == userId);
 
-            if(!hasExistingSkiCards)
+            if (!hasExistingSkiCards)
             {
                 viewModel.CardHolderFirstName = currentUser.FirstName;
                 viewModel.CardHolderLastName = currentUser.LastName;
@@ -62,23 +64,32 @@ namespace AlpineSkiHouse.Web.Controllers
         [ValidateAntiForgeryToken]
         public async Task<ActionResult> Create(CreateSkiCardViewModel viewModel)
         {
-            if(ModelState.IsValid)
+            if (ModelState.IsValid)
             {
                 var userId = _userManager.GetUserId(User);
 
-                SkiCard skiCard = new SkiCard
+                _logger.LogDebug($"Creating ski card for {userId}");
+
+                using (_logger.BeginScope($"CreateSkiCard:{userId}"))
                 {
-                    ApplicationUserId = userId,
-                    CreatedOn = DateTime.UtcNow,
-                    CardHolderFirstName = viewModel.CardHolderFirstName,
-                    CardHolderLastName = viewModel.CardHolderLastName,
-                    CardHolderBirthDate = viewModel.CardHolderBirthDate.Value.Date,
-                    CardHolderPhoneNumber = viewModel.CardHolderPhoneNumber
-                };
+                    SkiCard skiCard = new SkiCard
+                    {
+                        ApplicationUserId = userId,
+                        CreatedOn = DateTime.UtcNow,
+                        CardHolderFirstName = viewModel.CardHolderFirstName,
+                        CardHolderLastName = viewModel.CardHolderLastName,
+                        CardHolderBirthDate = viewModel.CardHolderBirthDate.Value.Date,
+                        CardHolderPhoneNumber = viewModel.CardHolderPhoneNumber
+                    };
 
-                _skiCardContext.SkiCards.Add(skiCard);
+                    _skiCardContext.SkiCards.Add(skiCard);
 
-                await _skiCardContext.SaveChangesAsync();
+                    await _skiCardContext.SaveChangesAsync();
+
+                    _logger.LogInformation($"Ski card created for {userId}");
+                }
+
+                _logger.LogDebug($"Ski card for {userId} created successfully, redirecting to Index...");
 
                 return RedirectToAction(nameof(Index));
             }
@@ -101,7 +112,7 @@ namespace AlpineSkiHouse.Web.Controllers
                     CardHolderPhoneNumber = s.CardHolderPhoneNumber
                 }).SingleOrDefaultAsync();
 
-            if(skiCardViewModel == null)
+            if (skiCardViewModel == null)
             {
                 return NotFound();
             }
@@ -113,14 +124,14 @@ namespace AlpineSkiHouse.Web.Controllers
         [ValidateAntiForgeryToken]
         public async Task<ActionResult> Edit(EditSkiCardViewModel viewModel)
         {
-            if(ModelState.IsValid)
+            if (ModelState.IsValid)
             {
                 var userId = _userManager.GetUserId(User);
 
                 var skiCard = await _skiCardContext.SkiCards
                     .SingleOrDefaultAsync(s => s.ApplicationUserId == userId && s.Id == viewModel.Id);
 
-                if(skiCard == null)
+                if (skiCard == null)
                 {
                     return NotFound();
                 }
